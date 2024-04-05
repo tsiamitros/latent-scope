@@ -137,7 +137,7 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
             clean_label = clean_label.replace("'", '')
             # clean_label = clean_label.replace("-", '')
             clean_label = ' '.join(clean_label.split())
-            clean_label = " ".join(clean_label.split(" ")[0:5])
+            clean_label = " ".join(clean_label.split(" "))
             clean_labels.append(clean_label)
             
             tqdm.write(f"cluster {i} label: {clean_label}")
