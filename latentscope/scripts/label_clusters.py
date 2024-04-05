@@ -87,7 +87,7 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
     model.load_model()
     enc = model.encoder
 
-    system_prompt = {"role":"system", "content": f""" {context} """}
+    system_prompt = {"role":"system", "content": f""" {context} """} 
 
     # TODO: why the extra 10 for openai?
     max_tokens = model.params["max_tokens"] - len(enc.encode(system_prompt["content"])) - 10
