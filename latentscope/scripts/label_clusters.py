@@ -87,10 +87,10 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
     model.load_model()
     enc = model.encoder
 
-    system_prompt = {"role":"system", "content": f""" {context} """} 
+    system_prompt = {"role":"system", "content": f"""Du bist ein hilfreicher Assistent. Für die folgende Aufgabe stehen dir zwischen den tags BEGININPUT und ENDINPUT mehrere Quellen zur Verfügung. Metadaten zu den einzelnen Quellen sind zwischen BEGINCONTEXT und ENDCONTEXT zu finden, danach folgt der Text der Quelle. Dabei handelt es sich um eine Liste von Kommentaren warum ein Newsletter abbestellt wurde. Die eigentliche Aufgabe oder Frage ist zwischen BEGININSTRUCTION und ENDINCSTRUCTION zu finden. Beantworte diese wortwörtlich und Stichpunktartig! """} 
 
     # TODO: why the extra 10 for openai?
-    max_tokens = model.params["max_tokens"] - len(enc.encode(system_prompt["content"])) - 10
+    max_tokens = model.params["max_tokens"] - len(enc.encode(system_prompt["content"])) - 175
 
     # Create the lists of items we will send for summarization
     # Current looks like:
@@ -126,7 +126,7 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
         try:
             time.sleep(0.01)
             messages=[
-                system_prompt, {"role":"user", "content": batch[0]} # TODO hardcoded batch size
+                system_prompt, {"role":"user", "content": "BEGININPUT BEGINCONTEXT Quelle: newsletter ENDCONTEXT" + batch[0]+ "ENDINPUT BEGININSTRUCTION Gib eine sehr kurze Zusammenfassung der Kommenater. Nutze nur 4 Wörter. ENDINSTRUCTION ASSISTANT:"} # TODO hardcoded batch size
             ]
             label = model.chat(messages)
             labels.append(label)
