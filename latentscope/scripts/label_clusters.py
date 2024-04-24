@@ -103,7 +103,7 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
         indices = row['indices']
         items = df.loc[list(indices), text_column]
         items = items.drop_duplicates()
-        text = '\n'.join([f"{i+1}. {t}" for i, t in enumerate(items) if not too_many_duplicates(t)])
+        text = '\n'.join([f"{t}" for i, t in enumerate(items) if not too_many_duplicates(t)])
         encoded_text = enc.encode(text)
         if len(encoded_text) > max_tokens:
             encoded_text = encoded_text[:max_tokens]
