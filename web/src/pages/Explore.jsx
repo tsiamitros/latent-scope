@@ -4,6 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import './Explore.css';
 import DataTable from '../components/DataTable';
 import IndexDataTable from '../components/IndexDataTable';
+import FilterDataTable from '../components/FilterDataTable';
 import Scatter from '../components/Scatter';
 import AnnotationPlot from '../components/AnnotationPlot';
 import HullPlot from '../components/HullPlot';
@@ -72,7 +73,8 @@ function Explore() {
     { id: 2, name: "Clusters" },
     { id: 3, name: "Tags" },
   ]
-  const [activeTab, setActiveTab] = useState(2)
+  const [activeTab, setActiveTab] = useState(0)
+  // const [activeTab, setActiveTab] = useState(2)
 
   useEffect(() => {
     fetch(`${apiUrl}/datasets/${datasetId}/meta`)
@@ -93,6 +95,7 @@ function Explore() {
   }, [datasetId, setScopes]);
 
 
+  const [delay, setDelay] = useState(200)
   const [scope, setScope] = useState(null);
   useEffect(() => {
     fetch(`${apiUrl}/datasets/${datasetId}/scopes/${scopeId}`)
@@ -396,6 +399,7 @@ function Explore() {
 
               <select className="scope-selector" onChange={(e) => {
                 clearScope()
+                setDelay(2000)
                 navigate(`/datasets/${dataset?.id}/explore/${e.target.value}`)
               }}>
 
@@ -462,7 +466,7 @@ function Explore() {
                 hulls={hulls}
                 stroke="black"
                 fill="none"
-                delay={2000}
+                delay={delay}
                 duration={200}
                 strokeWidth={1}
                 xDomain={xDomain}
@@ -515,12 +519,28 @@ function Explore() {
           </div>
           {!isMobileDevice() ? <div className="hovered-point">
             {hoveredCluster ? <span><span className="key">Cluster {hoveredCluster.index}:</span><span className="value">{hoveredCluster.label}</span></span> : null}
-            {hovered && Object.keys(hovered).map((key) => (
+            {hovered && Object.keys(hovered).map((key,idx) => {
+              let d = hovered[key]
+              if(typeof d === 'object' && !Array.isArray(d)) {
+                d = JSON.stringify(d)
+              }
+              let meta = dataset.column_metadata && dataset.column_metadata[key]
+              let value;
+              if(meta && meta.image) {
+                value = <span className="value" key={idx}><img src={d} alt={key} height={64} /></span>
+              } else if(meta && meta.url) {
+                value = <span className="value" key={idx}><a href={d}>url</a></span>
+              } else if(meta && meta.type == "array") {
+                value = <span className="value" key={idx}>[{d.length}]</span>
+              } else {
+                value = <span className="value" key={idx}>{d}</span>
+              }
+              return (
               <span key={key}>
-                <span className="key">{key}:</span>
-                <span className="value">{dataset?.column_metadata && dataset?.column_metadata[key]?.type == "array" ? `[array(${hovered[key].length})]` : hovered[key]}</span>
+                <span className="key">{key}:</span> 
+                {value}
               </span>
-            ))}
+            )})}
           </div> : null }
         </div> 
       </div>
@@ -564,6 +584,14 @@ function Explore() {
                 onClick={handleClicked}
               />
               : null}
+            
+            {/* <FilterDataTable
+                dataset={dataset}
+                indices={selectedIndices}
+                clusterIndices={clusterIndices}
+                clusterLabels={clusterLabels}
+            /> */}
+
           </div>
           : null}
 
