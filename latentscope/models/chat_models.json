@@ -116,7 +116,16 @@
         "sanitized_name": "VAGOsolutions/Llama-3-SauerkrautLM-8b-Instruct",
         "id": "VAGOsolutions/Llama-3-SauerkrautLM-8b-Instruct",
         "params": {
-          "max_tokens": 8200
+          "max_tokens": 8192
+        }
+      },
+      {
+        "provider": "transformers",
+        "name": "VAGOsolutions/SauerkrautLM-Gemma-2b",
+        "sanitized_name": "VAGOsolutions/SauerkrautLM-Gemma-2b",
+        "id": "VAGOsolutions/SauerkrautLM-Gemma-2b",
+        "params": {
+          "max_tokens": 8192
         }
       },
     {
