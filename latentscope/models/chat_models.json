@@ -112,11 +112,11 @@
       },
       {
         "provider": "transformers",
-        "name": "VAGOsolutions/Llama-3-SauerkrautLM-8b-Instruct",
-        "sanitized_name": "VAGOsolutions/Llama-3-SauerkrautLM-8b-Instruct",
-        "id": "VAGOsolutions/Llama-3-SauerkrautLM-8b-Instruct",
+        "name": "apple/OpenELM-450M-Instruct",
+        "sanitized_name": "apple/OpenELM-450M-Instruct",
+        "id": "apple/OpenELM-450M-Instruct",
         "params": {
-          "max_tokens": 8192
+          "max_tokens": 2048
         }
       },
       {
