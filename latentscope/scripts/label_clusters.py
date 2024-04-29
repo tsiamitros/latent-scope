@@ -108,8 +108,6 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
         if len(encoded_text) > max_tokens:
             encoded_text = encoded_text[:max_tokens]
         extracts.append(enc.decode(encoded_text))
-        print(text)
-        print(enc.decode(encoded_text))
     # TODO we arent really batching these
     batch_size = 1
     labels = []
