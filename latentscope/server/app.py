@@ -2,6 +2,7 @@ import re
 import os
 import sys
 import json
+import math
 import logging
 import argparse
 import pandas as pd
@@ -56,6 +57,10 @@ app.register_blueprint(datasets_bp, url_prefix='/api/datasets')
 if(not READ_ONLY):
     app.register_blueprint(datasets_write_bp, url_prefix='/api/datasets')
 
+from .bulk import bulk_bp, bulk_write_bp
+app.register_blueprint(bulk_bp, url_prefix='/api/bulk') 
+if(not READ_ONLY):
+    app.register_blueprint(bulk_write_bp, url_prefix='/api/bulk') 
 
 
 # ===========================================================
@@ -104,15 +109,12 @@ def indexed():
     # send back the rows as json
     return rows.to_json(orient="records")
 
-@app.route('/api/query', methods=['POST'])
-def query():
-    per_page = 100
+@app.route('/api/column-filter', methods=['POST'])
+def column_filter():
     data = request.get_json()
     dataset = data['dataset']
-    page = data['page'] if 'page' in data else 0
-    indices = data['indices'] if 'indices' in data else []
-    filters = data['filters'] if 'filters' in data else None
-    sort = data['sort'] if 'sort' in data else None
+    filters = data['filters']
+
     if dataset not in DATAFRAMES:
         df = pd.read_parquet(os.path.join(DATA_DIR, dataset, "input.parquet"))
         DATAFRAMES[dataset] = df
@@ -121,7 +123,7 @@ def query():
     
     # apply filters
     rows = df.copy()
-    rows['ls_index'] = rows.index
+
     print("FILTERS", filters)
     if filters:
         for f in filters:
@@ -140,6 +142,28 @@ def query():
             elif f["type"] == "contains":
                 rows = rows[rows[f['column']].str.contains(f['value'])]
 
+    return jsonify(indices=rows.index.to_list())
+
+@app.route('/api/query', methods=['POST'])
+def query():
+    per_page = 100
+    data = request.get_json()
+    dataset = data['dataset']
+    page = data['page'] if 'page' in data else 0
+    indices = data['indices'] if 'indices' in data else []
+    # filters = data['filters'] if 'filters' in data else None
+    sort = data['sort'] if 'sort' in data else None
+    if dataset not in DATAFRAMES:
+        df = pd.read_parquet(os.path.join(DATA_DIR, dataset, "input.parquet"))
+        DATAFRAMES[dataset] = df
+    else:
+        df = DATAFRAMES[dataset]
+    
+    # apply filters
+    rows = df.copy()
+    rows['ls_index'] = rows.index
+    
+
     # get the indexed rows
     print("INDICES", indices)
     if len(indices):
@@ -152,7 +176,7 @@ def query():
 
     # Convert DataFrame to a list of dictionaries
     rows_json = json.loads(rows[page*per_page:page*per_page+per_page].to_json(orient="records"))
-    print("ROWS JSON", rows_json)
+    # print("ROWS JSON", rows_json)
 
     # send back the rows as json
     return jsonify({
@@ -160,7 +184,7 @@ def query():
         "page": page,
         "per_page": per_page,
         "total": len(rows),
-        "totalPages": len(rows) // per_page
+        "totalPages": math.ceil(len(rows) / per_page)
     })
 
 if not READ_ONLY:

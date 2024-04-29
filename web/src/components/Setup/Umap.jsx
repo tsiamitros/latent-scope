@@ -31,6 +31,16 @@ function Umap({ dataset, umap, embedding, embeddings, clusters, onNew, onChange}
   const [init, setInit] = useState("")
 
   const [umaps, setUmaps] = useState([]);
+  
+  const [localUmap, setLocalUmap] = useState(umap)
+  useEffect(() => {
+    if(umap) {
+      setLocalUmap(umap)
+    } else {
+      setLocalUmap(umaps[0])
+    }
+  }, [umap, umaps])
+
   function fetchUmaps(datasetId, callback) {
     fetch(`${apiUrl}/datasets/${datasetId}/umaps`)
       .then(response => response.json())
@@ -54,14 +64,16 @@ function Umap({ dataset, umap, embedding, embeddings, clusters, onNew, onChange}
   useEffect(() => {
     if(umapJob?.status == "completed") {
       fetchUmaps(dataset.id, (umps) => {
-        setUmaps(umps)
         let ump;
         if(umapJob.job_name == "umap"){
           ump = umps.find(d => d.id == umapJob.run_id)
         } else if(umapJob.job_name == "rm") {
           ump = umps[0]
         }
-        onNew(umps, ump)
+        // onNew(umps, ump)
+        setLocalUmap(ump)
+        setUmaps(umps)
+        onNew(umps)
       })
     }
   }, [umapJob, dataset, setUmaps, onNew]);
@@ -152,7 +164,8 @@ function Umap({ dataset, umap, embedding, embeddings, clusters, onNew, onChange}
               <input type="radio" 
                 id={`umap${index}`} 
                 name="umap" 
-                value={um} checked={um.id === umap?.id} onChange={() => onChange(um)} />
+                value={um} checked={um.id === localUmap?.id} 
+                onChange={() => setLocalUmap(um)} />
               <label htmlFor={`umap${index}`}>{um.id}
               <br></br>
                 Neighbors: {um.neighbors}<br/>
@@ -173,6 +186,8 @@ function Umap({ dataset, umap, embedding, embeddings, clusters, onNew, onChange}
             An interface for comparing any two UMAPS in the same dataset. Direct comparisons are most useful between 2 aligned UMAPS
           </Tooltip>
         </div> : null }
+        <br></br>
+        {localUmap && <button type="submit" onClick={() => onChange(localUmap)}>Use UMAP</button>} {localUmap?.id}
     </div>
   );
 }

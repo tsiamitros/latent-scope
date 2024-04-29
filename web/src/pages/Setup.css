@@ -113,12 +113,23 @@
   background-color: steelblue;
   color: white;
 }
+.dataset--setup button[type="submit"] {
+  max-width: 220px;
+  background-color: lightcyan;
+  border: 1px solid darkcyan;
+}
+.dataset--setup button[type="submit"]:hover {
+  background-color: steelblue;
+  color: white;
+} 
+ 
 .dataset--setup .item {
   background-color: #f1f1f1;
   border-radius: 5px;
   margin: 6px;
   padding: 6px;
 }
+
 @media (prefers-color-scheme: dark) {
   .dataset--setup form button {
     color: #111;
@@ -128,7 +139,14 @@
   }
 }
 
-
+.dataset--setup .warning-header {
+  color: red;
+  font-weight: bold;
+}
+.dataset--setup .reimport button {
+  border: 1px solid red;
+  margin: 0 6px;
+}
 
 /* .active-stage {
   border: 1px solid orange;

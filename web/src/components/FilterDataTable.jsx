@@ -3,6 +3,8 @@ import PropTypes from 'prop-types';
 // import DataTable from './DataTable';
 const apiUrl = import.meta.env.VITE_API_URL
 
+import './FilterDataTable.css'
+
 import {
 //   Column,
 //   ColumnFiltersState,
@@ -55,31 +57,34 @@ const fuzzySort = (rowA, rowB, columnId) => {
 
 
 FilterDataTable.propTypes = {
+  height: PropTypes.string,
   dataset: PropTypes.object.isRequired,
+  scope: PropTypes.object.isRequired,
   indices: PropTypes.array.isRequired,
   distances: PropTypes.array,
-  clusterIndices: PropTypes.array,
+  clusterMap: PropTypes.object,
   clusterLabels: PropTypes.array,
-  height: PropTypes.string,
-  maxRows: PropTypes.number,
   tagset: PropTypes.object,
+  onTagset: PropTypes.func,
+  onScope: PropTypes.func,
   onHover: PropTypes.func,
   onClick: PropTypes.func,
-  onTagset: PropTypes.func,
 };
 
 function FilterDataTable({
+  height="calc(100% - 40px)",
   dataset,
+  scope,
   indices = [], 
   distances = [], 
-  clusterIndices = [], 
-  clusterLabels = [], 
-  height="calc(100% - 40px)",
-  maxRows, 
-  tagset, 
+  clusterMap = {},
+  // clusterIndices = [], 
+  clusterLabels, 
+  tagset,
+  onTagset,
+  onScope,
   onHover, 
   onClick, 
-  onTagset
 }) {
 
 
@@ -91,10 +96,41 @@ function FilterDataTable({
   const [pageCount, setPageCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(0)
 
+  const [tags, setTags] = useState([])
+  useEffect(() => {
+    if(tagset){
+      setTags(Object.keys(tagset))
+    }
+  }, [tagset])
+
+  function handleTagClick(tag, index) {
+    // console.log("tag", tag)
+    // console.log("index", index)
+    // console.log("tagset", tagset)
+    // console.log("tagset[tag]", tagset[tag])
+    if(tagset[tag].includes(index)) {
+      console.log("removing")
+      fetch(`${apiUrl}/tags/remove?dataset=${dataset?.id}&tag=${tag}&index=${index}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log("removed", data)
+          onTagset();
+        });
+    } else {
+      console.log("adding")
+      fetch(`${apiUrl}/tags/add?dataset=${dataset?.id}&tag=${tag}&index=${index}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log("added", data)
+          onTagset();
+        });
+    }
+  }
+
   const hydrateIndices = useCallback((indices) => {
-    console.log("hydrate!", dataset)
-    if(dataset) {
-      console.log("fetching query", dataset)
+    // console.log("hydrate!", dataset)
+    if(dataset && indices.length) {
+      // console.log("fetching query", dataset)
       fetch(`${apiUrl}/query`, {
         method: 'POST',
         headers: {
@@ -109,18 +145,20 @@ function FilterDataTable({
       .then(response => response.json())
       .then(data => {
         let { rows, totalPages, total } = data;
-        console.log("rows", rows)
-        console.log("pages", totalPages, total)
+        // console.log("rows", rows)
+        // console.log("pages", totalPages, total)
         setPageCount(totalPages)
 
-        if(clusterIndices.length && clusterLabels.length) {
+        if(Object.keys(clusterMap).length){
           rows.forEach(r => {
             let ri = r["ls_index"]
-            let cli = clusterIndices[ri]
-            let cluster = clusterLabels[cli]?.cluster
-            r["ls_cluster"] = cluster?.label
+            let cluster = clusterMap[ri]
+            if(cluster) {
+              r["ls_cluster"] = cluster
+            }
           })
         }
+
         if(distances && distances.length) {
           rows.forEach(r => {
             let ri = r["ls_index"]
@@ -128,38 +166,32 @@ function FilterDataTable({
           })
         }
 
-        // if(rows.length) {
-        //   let columns = Object.keys(rows[0]).map((c, i) => {
-        //     // console.log("COLUMN", c, i)
-        //     return {
-        //       id: ""+i,
-        //       cell: info => info.getValue(),
-        //       // header: () => "" + c,
-        //       header: c,
-        //       accessorKey: c,
-        //       footer: props => props.column.id,
-        //     }
-        //   })
-        //   console.log("COLUMNS", columns)
-        //   setColumns(columns)
-        // }
         setRows(rows)
       })
+    } else {
+      setRows([])
     }
-  }, [dataset, distances, clusterIndices, clusterLabels, currentPage])
+  }, [dataset, distances, clusterMap, currentPage])
 
   useEffect(() => {
-    console.log("refetching hydrate", indices, dataset)
     if(dataset) {
-      let columns = ["ls_index"].concat(dataset.columns).map((c, i) => {
+      // console.log("refetching hydrate", indices, dataset)
+      // console.log("Tagset", tagset)
+      let columns = ["ls_index"]
+      if(scope) columns.push("ls_cluster")
+      if(tagset && Object.keys(tagset).length) columns.push("tags")
+      columns.push(dataset.text_column)
+      columns = columns.concat(dataset.columns.filter(d => d !== dataset.text_column))
+      let columnDefs = columns.map((c, i) => {
       // let columns = dataset.columns.map((c, i) => {
         const metadata = dataset.column_metadata ? dataset.column_metadata[c] : null;
-        console.log("COLUMN", c, metadata)
+        // console.log("COLUMN", c, metadata)
         return {
           id: ""+i,
           cell: info => {
             const value = info.getValue();
             let val = value;
+            let idx = info.row.getValue("0")
             // If metadata specifies image, render as an image tag
             if (metadata?.image) {
               return <a href={value} target="_blank" rel="noreferrer"><img src={value} alt="" style={{ height: '100px' }} /></a>;
@@ -174,6 +206,55 @@ function FilterDataTable({
             } 
             else if (typeof value === "object") {
               val = JSON.stringify(value)
+            }
+            if(c === "tags") {
+              
+              return <div className="tags">
+                {tags.map(t => {
+                  let ti = tagset[t]?.indexOf(idx) >= 0
+                  // console.log(t, ti, idx)
+                  return <button className={ti ? 'tag-active' : 'tag-inactive'} key={t} onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleTagClick(t, idx)
+                  }}>{t}</button>
+                })}
+              </div>
+            }
+            if(c === "ls_cluster") {
+              return <div className="ls-cluster" onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                
+              }}>
+                <select value={value?.cluster} onChange={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  console.log("was cluster", value)
+                  console.log("updating to cluster", e.target.value)
+                  fetch(`${apiUrl}/bulk/change-cluster`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                      dataset_id: dataset.id,
+                      scope_id: scope.id,
+                      row_ids: [idx],
+                      new_cluster: e.target.value
+                    }),
+                  })
+                  .then(response => response.json())
+                  .then(data => {
+                    onScope();
+                  });
+                }}>
+                  {clusterLabels.map((c,i) => {
+                    return <option key={i} value={c.cluster}>{c.cluster}: {c.label}</option>
+                  })}
+                </select>
+              </div>
+              // return <span>{value.cluster}: {value.label}</span>
             }
             // Default text rendering
             return <div
@@ -203,10 +284,12 @@ function FilterDataTable({
           footer: props => props.column.id,
         }
       })
-      setColumns(columns)
+      // console.log("COLUMNS", columns, columnDefs)
+      setColumns(columnDefs)
     }
     hydrateIndices(indices)
-  }, [indices, dataset, currentPage]) // hydrateIndicies
+  // }, [ indices, dataset, scope, tagset, tags, currentPage, clusterLabels]) // hydrateIndicies
+  }, [dataset, indices, tags, scope, tagset, currentPage, clusterLabels])
 
 
   const [columnFilters, setColumnFilters] = useState([])
@@ -279,6 +362,17 @@ function FilterDataTable({
     // Call it initially and whenever the window resizes
     adjustHeaderWidth();
     window.addEventListener('resize', adjustHeaderWidth);
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        if (entry.target === bodyRef.current) {
+          adjustHeaderWidth();
+        }
+      }
+    });
+
+    if (bodyRef.current) {
+      resizeObserver.observe(bodyRef.current);
+    }
 
   
     // Start: Code to synchronize horizontal scroll
@@ -298,13 +392,14 @@ function FilterDataTable({
     window.removeEventListener('resize', adjustHeaderWidth);
     // Clean up the scroll listener
     bodyEl.removeEventListener('scroll', syncHorizontalScroll);
+    resizeObserver.disconnect();
   };
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: height }}>
+    <div className="filter-data-table" style={{  height: height, visibility: indices.length ? 'visible' : 'hidden' }}>
       {/* Fixed Header */}
-      <div style={{ flexShrink: 0, paddingRight: `${scrollbarWidth}px`}} ref={headerRef}>
+      <div className="filter-data-table-fixed-header" style={{ flexShrink: 0, paddingRight: `${scrollbarWidth}px`}} ref={headerRef}>
         <table>
         <thead>
           {table.getHeaderGroups().map(headerGroup => (
@@ -313,7 +408,7 @@ function FilterDataTable({
               }}>
               {headerGroup.headers.map(header => {
                 return (
-                  <th key={header.id} colSpan={header.colSpan} style={{ textAlign: 'left', paddingLeft: '6px' }}>
+                  <th key={header.id} colSpan={header.colSpan}>
                     {header.isPlaceholder ? null : (
                       <>
                         <div
@@ -353,10 +448,7 @@ function FilterDataTable({
               <tr key={row.id} style={{  visibility: 'collapse' }}>
                 {row.getVisibleCells().map(cell => {
                   return (
-                    <td key={cell.id} style={{
-                      padding: '6px',
-                      borderBottom: '1px solid #eee'
-                    }}>
+                    <td key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()
@@ -371,7 +463,7 @@ function FilterDataTable({
       </table>
       </div>
       {/* Scrollable Table Body */}
-      <div style={{ flexGrow: 1, overflowY: 'auto' }} className="table-body" ref={bodyRef}>
+      <div className="filter-table-scrollable-body table-body" style={{ flexGrow: 1, overflowY: 'auto' }} ref={bodyRef}>
         <table style={{width: '100%'}}>
         <thead style={{ visibility: 'collapse' }}>
           {/* Invisible header mimicking the real header for column width synchronization */}
@@ -384,15 +476,15 @@ function FilterDataTable({
         <tbody>
           {table.getRowModel().rows.map(row => {
             return (
-              <tr key={row.id} style={{ 
-                // backgroundColor: '#f9f9f9', 
-                }}>
+              <tr key={row.id}
+                onMouseEnter={() => {
+                  onHover && onHover(row.getValue("0")) 
+                }}
+                onClick={() => onClick && onClick(row.getValue("0"))}
+                >
                 {row.getVisibleCells().map(cell => {
                   return (
-                    <td key={cell.id} style={{
-                      padding: '6px',
-                      borderBottom: '1px solid #eee'
-                    }}>
+                    <td key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()
@@ -406,7 +498,7 @@ function FilterDataTable({
         </tbody>
       </table>
       </div>
-      <div style={{ flexShrink: 0, marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div className="filter-data-table-page-controls">
         <button onClick={() => setCurrentPage(0)} disabled={currentPage === 0}>
           First
         </button>
@@ -414,7 +506,7 @@ function FilterDataTable({
           Previous
         </button>
         <span>
-          Page {currentPage + 1} of {pageCount}
+          Page {currentPage + 1} of {pageCount || 1}
         </span>
         <button onClick={() => setCurrentPage(old => Math.min(pageCount - 1, old + 1))} disabled={currentPage === pageCount - 1}>
           Next
@@ -427,113 +519,3 @@ function FilterDataTable({
   )
 }
 export default FilterDataTable;
-
-Filter.propTypes = {
-  column: PropTypes.object.isRequired,
-  table: PropTypes.object.isRequired,
-};
-
-function Filter({ column, table }) {
-  const firstValue = table
-    .getPreFilteredRowModel()
-    .flatRows[0]?.getValue(column.id);
-  const columnFilterValue = column.getFilterValue();
-  const sortedUniqueValues = useMemo(
-    () =>
-      typeof firstValue === 'number'
-        ? []
-        : Array.from(column.getFacetedUniqueValues().keys()).sort(),
-    [column.getFacetedUniqueValues()]
-  );
-
-  return typeof firstValue === 'number' ? (
-    <div>
-      <div className="flex space-x-2">
-        <DebouncedInput
-          type="number"
-          min={Number(column.getFacetedMinMaxValues()?.[0] ?? '')}
-          max={Number(column.getFacetedMinMaxValues()?.[1] ?? '')}
-          value={(columnFilterValue || [])[0] ?? ''}
-          onChange={(value) =>
-            column.setFilterValue((old = []) => [value, old[1]])
-          }
-          placeholder={`Min ${
-            column.getFacetedMinMaxValues()?.[0]
-              ? `(${column.getFacetedMinMaxValues()?.[0]})`
-              : ''
-          }`}
-          className="w-24 border shadow rounded"
-        />
-        <DebouncedInput
-          type="number"
-          min={Number(column.getFacetedMinMaxValues()?.[0] ?? '')}
-          max={Number(column.getFacetedMinMaxValues()?.[1] ?? '')}
-          value={(columnFilterValue || [])[1] ?? ''}
-          onChange={(value) =>
-            column.setFilterValue((old = []) => [old[0], value])
-          }
-          placeholder={`Max ${
-            column.getFacetedMinMaxValues()?.[1]
-              ? `(${column.getFacetedMinMaxValues()?.[1]})`
-              : ''
-          }`}
-          className="w-24 border shadow rounded"
-        />
-      </div>
-      <div className="h-1" />
-    </div>
-  ) : (
-    <>
-      <datalist id={column.id + 'list'}>
-        {sortedUniqueValues.slice(0, 5000).map((value) => (
-          <option value={value} key={value} />
-        ))}
-      </datalist>
-      <DebouncedInput
-        type="text"
-        value={(columnFilterValue ?? '') + ''}
-        onChange={(value) => column.setFilterValue(value)}
-        placeholder={`Search... (${column.getFacetedUniqueValues().size})`}
-        className="w-36 border shadow rounded"
-        list={column.id + 'list'}
-      />
-      <div className="h-1" />
-    </>
-  );
-}
-
-
-// A debounced input react component
-DebouncedInput.propTypes = {
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-  onChange: PropTypes.func.isRequired,
-  debounce: PropTypes.number,
-  // This is a catch-all for any other props not explicitly defined above but passed to <input />
-  // It's important for flexibility and usability of the DebouncedInput component in various contexts.
-  props: PropTypes.object
-};
-
-function DebouncedInput({
-  value: initialValue,
-  onChange,
-  debounce = 500,
-  ...props
-}) {
-  const [value, setValue] = useState(initialValue)
-
-  useEffect(() => {
-    setValue(initialValue)
-  }, [initialValue])
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      onChange(value)
-    }, debounce)
-
-    return () => clearTimeout(timeout)
-  }, [value])
-
-  return (
-    <input {...props} value={value} onChange={e => setValue(e.target.value)} />
-  )
-}
