@@ -90,7 +90,7 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
     system_prompt = {"role":"system", "content": f""" {context} """} 
 
     # TODO: why the extra 10 for openai?
-    max_tokens = model.params["max_tokens"] - len(enc.encode(system_prompt["content"])) - 10
+    max_tokens = model.params["max_tokens"] - len(enc.encode(system_prompt["content"])) - 200
 
     # Create the lists of items we will send for summarization
     # Current looks like:
@@ -108,7 +108,8 @@ def labeler(dataset_id, text_column="text", cluster_id="cluster-001", model_id="
         if len(encoded_text) > max_tokens:
             encoded_text = encoded_text[:max_tokens]
         extracts.append(enc.decode(encoded_text))
-
+        print(text)
+        print(enc.decode(encoded_text))
     # TODO we arent really batching these
     batch_size = 1
     labels = []
