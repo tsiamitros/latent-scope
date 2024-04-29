@@ -2,12 +2,17 @@ import { useReducer, useEffect, useState, useMemo, useCallback, useRef } from 'r
 import { useParams, Link, useNavigate } from 'react-router-dom';
 
 import './Explore.css';
-import DataTable from '../components/DataTable';
-import IndexDataTable from '../components/IndexDataTable';
+// import DataTable from '../components/DataTable';
+// import IndexDataTable from '../components/IndexDataTable';
 import FilterDataTable from '../components/FilterDataTable';
 import Scatter from '../components/Scatter';
 import AnnotationPlot from '../components/AnnotationPlot';
 import HullPlot from '../components/HullPlot';
+
+import Tagging from '../components/Bulk/Tagging';
+import Clustering from '../components/Bulk/Clustering';
+// import Saving from '../components/Bulk/Saving';
+import Deleting from '../components/Bulk/Deleting';
 
 
 const apiUrl = import.meta.env.VITE_API_URL
@@ -22,19 +27,10 @@ const isMobileDevice = () => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
-
-const initialState = {
-  dataset: null,
-
-}
-
-function reducer(state, action) {
-}
-
-
-function processHulls(labels, points) {
+function processHulls(labels, points, indexMap) {
+  if(!labels) return []
   return labels.map(d => {
-    return d.hull.map(i => points[i])
+    return d.hull.map(i => points[indexMap[i]])
   })
 }
 
@@ -45,6 +41,7 @@ function Explore() {
   const navigate = useNavigate();
 
   const containerRef = useRef(null);
+  const filtersContainerRef = useRef(null);
 
   // let's fill the container and update the width and height if window resizes
   const [scopeWidth, scopeHeight] = useWindowSize();
@@ -66,15 +63,32 @@ function Explore() {
     return size;
   }
 
-  // Tabs
-  const tabs = [
-    { id: 0, name: "Selected" },
-    { id: 1, name: "Search" },
-    { id: 2, name: "Clusters" },
-    { id: 3, name: "Tags" },
-  ]
-  const [activeTab, setActiveTab] = useState(0)
-  // const [activeTab, setActiveTab] = useState(2)
+  const [filtersHeight, setFiltersHeight] = useState(250);
+
+  useEffect(() => {
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        const {height} = entry.contentRect;
+        setFiltersHeight(height);
+      }
+    });
+
+    let node = filtersContainerRef.current
+    if (node) {
+      resizeObserver.observe(node);
+    } else {
+      setTimeout(() => {
+        node = filtersContainerRef.current
+        resizeObserver.observe(node)
+      }, 100)
+    }
+
+    return () => {
+      if (node) {
+        resizeObserver.unobserve(node);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     fetch(`${apiUrl}/datasets/${datasetId}/meta`)
@@ -97,7 +111,7 @@ function Explore() {
 
   const [delay, setDelay] = useState(200)
   const [scope, setScope] = useState(null);
-  useEffect(() => {
+  const fetchScopeMeta = useCallback(() => {
     fetch(`${apiUrl}/datasets/${datasetId}/scopes/${scopeId}`)
       .then(response => response.json())
       .then(data => {
@@ -106,8 +120,12 @@ function Explore() {
       });
   }, [datasetId, scopeId, setScope]);
 
+  useEffect(() => {
+   fetchScopeMeta() 
+  }, [datasetId, scopeId, fetchScopeMeta]);
+
   const [embedding, setEmbedding] = useState(null);
-  const [umap, setUmap] = useState(null);
+  const [clusterMap, setClusterMap] = useState({})
   const [clusterIndices, setClusterIndices] = useState([]); // the cluster number for each point
   const [clusterLabels, setClusterLabels] = useState([]);
   // The search model is the embeddings model that we pass to the nearest neighbor query
@@ -126,48 +144,69 @@ function Explore() {
   }, [datasetId, setEmbeddings]);
 
 
+  const [scopeRows, setScopeRows] = useState([])
   const [points, setPoints] = useState([]);
   const [drawPoints, setDrawPoints] = useState([]); // this is the points with the cluster number
   const [hulls, setHulls] = useState([]); 
-  useEffect(() => {
-    if (scope) {
-      setEmbedding(embeddings.find(e => e.id == scope.embedding_id))
+  const [scopeToInputIndexMap, setScopeToInputIndexMap] = useState({})
+  const [inputToScopeIndexMap, setInputToScopeIndexMap] = useState({})
 
-      Promise.all([
-        fetch(`${apiUrl}/datasets/${datasetId}/umaps/${scope.umap_id}`).then(response => response.json()),
-        fetch(`${apiUrl}/datasets/${datasetId}/umaps/${scope.umap_id}/points`).then(response => response.json()),
-        fetch(`${apiUrl}/datasets/${datasetId}/clusters/${scope.cluster_id}/labels/${scope.cluster_labels_id.split("-")[3] || scope.cluster_labels_id}`).then(response => response.json()),
-        fetch(`${apiUrl}/datasets/${datasetId}/clusters/${scope.cluster_id}/indices`).then(response => response.json())
-      ]).then(([umapData, pointsData, labelsData, clusterIndicesData]) => {
-        // console.log("umap", umapData);
-        setUmap(umapData);
+  const fetchScopeRows = useCallback(() => {
+    fetch(`${apiUrl}/datasets/${datasetId}/scopes/${scope.id}/parquet`)
+      .then(response => response.json())
+      .then(scopeRows => {
+        // console.log("scope rows", scopeRows)
+        setScopeRows(scopeRows)
+
+        // calculate scopeIndexMap
+        let sim = {}
+        let ism = {}
+        scopeRows.forEach((d,i) => {
+          ism[d.ls_index] = i
+          sim[i] = d.ls_index
+        })
+        setScopeToInputIndexMap(sim)
+        setInputToScopeIndexMap(ism)
 
         // console.log("set points")
-        const pts = pointsData.map(d => [d.x, d.y])
+        // const pts = pointsData.map(d => [d.x, d.y])
+        const pts = scopeRows.map(d => [d.x, d.y])
         setPoints(pts)
 
-        const dpts = pointsData.map((d, i) => [d.x, d.y, clusterIndicesData[i].cluster])
+        // const dpts = pointsData.map((d, i) => [d.x, d.y, clusterIndicesData[i].cluster])
+        const dpts = scopeRows.map((d, i) => [d.x, d.y, d.cluster])
         setDrawPoints(dpts)
         setHulls([])
 
+        // console.log("SCOPE", scope)
+        const labelsData = scope.cluster_labels_lookup || []
         // console.log("labels", labelsData);
         setClusterLabels(labelsData);
 
         // console.log("cluster indices", clusterIndicesData);
-        setClusterIndices(clusterIndicesData);
+        // setClusterIndices(clusterIndicesData);
+        setClusterIndices(scopeRows.map(d => d.cluster));
+
+        let clusterMap = {}
+        scopeRows.forEach(d => {
+          clusterMap[d.ls_index] = scope.cluster_labels_lookup?.[d.cluster]
+        })
+        setClusterMap(clusterMap)
 
         setTimeout(() => {
-          setHulls(processHulls(labelsData, pts))
+          if(labelsData)
+            setHulls(processHulls(labelsData, pts, ism))
         }, 100)
 
       }).catch(error => console.error("Fetching data failed", error));
+  }, [datasetId, scope, setHulls, setClusterMap, setClusterLabels, setClusterIndices, setPoints]);
 
+  useEffect(() => {
+    if (scope) {
+      setEmbedding(embeddings.find(e => e.id == scope.embedding_id))
+      fetchScopeRows()
     }
-  }, [datasetId, scope, embeddings, setUmap, setClusterLabels, setEmbedding, setSearchModel]);
-
-  const memoClusterIndices = useMemo(() => {
-    return clusterIndices.map(d => d.cluster)
-  }, [clusterIndices])
+  }, [fetchScopeRows, scope, embeddings, setClusterLabels, setEmbedding, setSearchModel]);
 
 
   useEffect(() => {
@@ -181,7 +220,7 @@ function Explore() {
   }, [embedding, embeddings, setSearchModel])
 
   useEffect(() => {
-    console.log("search model", searchModel)
+    // console.log("search model", searchModel)
   }, [searchModel])
 
 
@@ -232,12 +271,13 @@ function Explore() {
   const [selectedIndices, setSelectedIndices] = useState([]);
 
   const handleSelected = useCallback((indices) => {
-    console.log("handle selected", indices)
-    setSelectedIndices(indices);
-    setActiveTab(0)
+    // console.log("handle selected", indices)
+    // we have to map from the scatterplot indices to the ls_index of the original input data (in case any has been deleted)
+    let idxs = indices.map(i => scopeToInputIndexMap[i])
+    setSelectedIndices(idxs);
     // for now we dont zoom because if the user is selecting via scatter they can easily zoom themselves
     // scatter?.zoomToPoints(indices, { transition: true })
-  }, [setSelectedIndices, setActiveTab])
+  }, [setSelectedIndices, scopeToInputIndexMap])
 
   // Hover via scatterplot or tables
   // index of item being hovered over
@@ -245,25 +285,22 @@ function Explore() {
   const [hovered, setHovered] = useState(null);
   useEffect(() => {
     if (hoveredIndex !== null && hoveredIndex !== undefined) {
-      hydrateIndices([hoveredIndex], (results) => {
+      hydrateIndices([scopeToInputIndexMap[hoveredIndex]], (results) => {
         setHovered(results[0])
       })
     } else {
       setHovered(null)
     }
-  }, [hoveredIndex, setHovered, hydrateIndices])
+  }, [hoveredIndex, setHovered, hydrateIndices, scopeToInputIndexMap])
 
   const [hoveredCluster, setHoveredCluster] = useState(null);
   useEffect(() => {
-    if (hovered && clusterIndices.length && clusterLabels.length) {
-      const index = hovered.index
-      const cluster = clusterIndices[index]
-      const label = clusterLabels[cluster?.cluster]
-      setHoveredCluster({ cluster: cluster.cluster, ...label })
+    if (hoveredIndex) {
+      setHoveredCluster(clusterMap[scopeToInputIndexMap[hoveredIndex]])
     } else {
       setHoveredCluster(null)
     }
-  }, [hovered, clusterIndices, clusterLabels, setHoveredCluster])
+  }, [hoveredIndex, clusterMap, scopeToInputIndexMap, setHoveredCluster])
 
   const [hoverAnnotations, setHoverAnnotations] = useState([]);
   useEffect(() => {
@@ -278,11 +315,17 @@ function Explore() {
   // Tags
   // ====================================================================================================
   const [tagset, setTagset] = useState({});
-  useEffect(() => {
+
+  const fetchTagSet = useCallback(() => {
     fetch(`${apiUrl}/tags?dataset=${datasetId}`)
       .then(response => response.json())
       .then(data => setTagset(data));
-  }, [datasetId])
+  }, [datasetId, setTagset])
+
+  useEffect(() => {
+    fetchTagSet()
+  }, [fetchTagSet])
+
   const tags = useMemo(() => {
     const tags = []
     for (const tag in tagset) {
@@ -302,7 +345,7 @@ function Explore() {
     } else {
       setTagAnnotations([])
       if (scatter && scatter.config) {
-        scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
+        // scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
       }
     }
   }, [tagset, tag, points, scatter, setTagAnnotations])
@@ -317,9 +360,10 @@ function Explore() {
       .then(response => response.json())
       .then(data => {
         // console.log("search", data)
-        setDistances(data.distances);
-        setSearchIndices(data.indices);
-        scatter?.zoomToPoints(data.indices, { transition: true, padding: 0.2, transitionDuration: 1500 })
+        let indices = data.indices.filter(d => inputToScopeIndexMap[d] >= 0)
+        // setDistances(data.distances); // TODO: if we want distances we'd need to filter them at the same time
+        setSearchIndices(indices);
+        // scatter?.zoomToPoints(data.indices, { transition: true, padding: 0.2, transitionDuration: 1500 })
       });
   }, [searchModel, datasetId, scatter, setDistances, setSearchIndices]);
 
@@ -337,17 +381,34 @@ function Explore() {
   const [slideAnnotations, setSlideAnnotations] = useState([]);
   useEffect(() => {
     if (slide) {
-      const annots = slide.indices.map(index => points[index])
+      // const annots = slide.indices.map(index => points[index])
+      const annots = drawPoints.filter(p => p[2] == slide.cluster)
       setSlideAnnotations(annots)
     } else {
       setSlideAnnotations([])
       if (scatter && scatter.config) {
-        scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
+        // scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
       }
     }
   }, [slide, points, scatter, setSlideAnnotations])
 
   const [clusterLabel, setClusterLabel] = useState(slide?.label || '');
+  const [newClusterLabel, setNewClusterLabel] = useState('')
+  useEffect(() => {
+    setNewClusterLabel('')
+  }, [slide])
+
+const handleNewCluster = useCallback((label) => {
+    console.log("new cluster", label)
+    fetch(`${apiUrl}/datasets/${datasetId}/scopes/${scope.id}/new-cluster?label=${label}`)
+      .then(response => response.json())
+      .then(data => {
+        console.log("what happened?", data)
+        fetchScopeMeta()
+      })
+  }, [datasetId, scope, fetchScopeMeta])
+
+
 
   useEffect(() => {
     setClusterLabel(slide?.label || '');
@@ -361,21 +422,14 @@ function Explore() {
     setHoveredIndex(index);
   }, [setHoveredIndex])
 
-  const handleLabelUpdate = useCallback((index, label) => {
-    console.log("update label", index, label)
-    fetch(`${apiUrl}/datasets/${datasetId}/clusters/${scope.cluster_id}/labels/${scope.cluster_labels_id}/label/${index}?label=${label}`)
+  const handleLabelUpdate = useCallback((cluster, label) => {
+    console.log("update label", cluster, label)
+    fetch(`${apiUrl}/bulk/change-cluster-name?dataset_id=${datasetId}&scope_id=${scope.id}&cluster=${cluster}&new_label=${label}`)
       .then(response => response.json())
-      .then(_ => {
-        fetch(`${apiUrl}/datasets/${datasetId}/clusters/${scope.cluster_id}/labels/${scope.cluster_labels_id}`)
-          .then(response => response.json())
-          .then(data => {
-            console.log("got new labels", data)
-            setClusterLabels(data);
-            setHulls(processHulls(data, points))
-          })
-          .catch(console.error);
+      .then(data => {
+        console.log("got new labels", data)
+        fetchScopeMeta()
       })
-      .catch(console.error);
   }, [datasetId, scope])
 
   const clearScope = useCallback(() => {
@@ -383,6 +437,119 @@ function Explore() {
     // setClusterLabels([])
     // setPoints([])
   }, [])
+
+
+  const [columnIndices, setColumnIndices] = useState([])
+  const [columnFiltersActive, setColumnFiltersActive] = useState({})
+
+
+  const columnFilters = useMemo(() => {
+    if(!dataset?.column_metadata) return []
+    return Object.keys(dataset.column_metadata).map(column => ({
+      column: column,
+      categories: dataset.column_metadata[column].categories,
+      counts: dataset.column_metadata[column].counts
+    })).filter(d => d.counts)
+  }, [dataset])
+
+  const [columnIndicesAnnotations, setColumnIndicesAnnotations] = useState([])
+  useEffect(() => {
+    const annots = columnIndices.map(index => points[inputToScopeIndexMap[index]])
+    setColumnIndicesAnnotations(annots)
+  }, [columnIndices, points, inputToScopeIndexMap])
+
+  const columnQuery = useCallback((filters) => {
+    let query = []
+    Object.keys(filters).forEach(c => {
+      let f = filters[c]
+      if(f) {
+        query.push({
+          column: c,
+          type: "eq",
+          value: f
+        })
+      }
+    })
+    console.log("query", query)
+    fetch(`${apiUrl}/column-filter`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dataset: datasetId, filters: query }),
+    })
+    .then(response => response.json())
+    .then(data => {
+      let indices = data.indices.filter(d => inputToScopeIndexMap[d] >= 0)
+      setColumnIndices(indices)
+    })
+
+  }, [datasetId, inputToScopeIndexMap, setColumnIndices]);
+
+  useEffect(() => {
+    let active = Object.values(columnFiltersActive).filter(d => !!d).length
+    console.log("active filters", active, columnFiltersActive)
+    if(active > 0) {
+      columnQuery(columnFiltersActive)
+    }
+  }, [columnFiltersActive, columnQuery])
+
+  const clearFilters = useCallback(() => {
+    setSelectedIndices([])
+    setSearchIndices([])
+    setTag(null)
+    setColumnIndices([])
+  }, [setSelectedIndices, setSearchIndices, setTag, setColumnIndices])
+
+  const filterInputIndices = useCallback((indices) => {
+    return indices.filter(d => inputToScopeIndexMap[d] >= 0)
+  }, [inputToScopeIndexMap])
+
+
+  function intersectMultipleArrays(...arrays) {
+    arrays = arrays.filter(d => d.length > 0)
+    if (arrays.length === 0) return [];
+    if(arrays.length == 1) return arrays[0]
+    // Use reduce to accumulate intersections
+    return arrays.reduce((acc, curr) => {
+        // Convert current array to a Set for fast lookup
+        const currSet = new Set(curr);
+        // Filter the accumulated results to keep only elements also in the current array
+        return acc.filter(x => currSet.has(x));
+    });
+  }
+
+
+  const [intersectedIndices, setIntersectedIndices] = useState([])
+  // intersect the indices from the various filters
+  useEffect(() => {
+    // console.log("selectedIndices", selectedIndices)
+    // console.log("searchIndices", searchIndices)
+    // console.log("tag", tag)
+    // console.log("tagset", tagset[tag])
+    const filteredClusterIndices = scopeRows.filter(d => d.cluster == slide?.cluster).map(d => d.ls_index)
+    const filteredTagset = filterInputIndices(tagset[tag] || [])
+    let indices = intersectMultipleArrays(selectedIndices || [], 
+      searchIndices || [], 
+      filteredClusterIndices || [], 
+      filteredTagset || [], 
+      columnIndices || [])
+    if(indices.length == 0 && selectedIndices.length > 0) {
+      indices = selectedIndices
+    }
+    // console.log("indices!", indices)
+    setIntersectedIndices(indices)
+  }, [scopeRows, selectedIndices, searchIndices, slide, tagset, tag, inputToScopeIndexMap, columnIndices])
+
+  const [intersectedAnnotations, setIntersectedAnnotations] = useState([]);
+  useEffect(() => {
+    const annots = intersectedIndices.map(index => points[inputToScopeIndexMap[index]])
+    setIntersectedAnnotations(annots)
+  }, [intersectedIndices, points, inputToScopeIndexMap])
+
+
+  const [bulkAction, setBulkAction] = useState(null)
+
 
   if (!dataset) return <div>Loading...</div>;
 
@@ -401,10 +568,11 @@ function Explore() {
                 clearScope()
                 setDelay(2000)
                 navigate(`/datasets/${dataset?.id}/explore/${e.target.value}`)
-              }}>
-
+              }}
+                value={scope?.id}
+              >
                 {scopes.map((scopeOption, index) => (
-                  <option key={index} value={scopeOption.id} selected={scopeOption.id === scope?.id}>
+                  <option key={index} value={scopeOption.id}>
                     {scopeOption.label} ({scopeOption.id})
                   </option>
                 ))}
@@ -413,19 +581,27 @@ function Explore() {
               {readonly ? null : <Link to={`/datasets/${dataset?.id}/export/${scope?.id}`}>Export</Link>}
             </div>
             {/* </h3> */}
-            <span>{scope?.description}</span>
-            <span>{embedding?.model_id}</span>
-            <span>{clusterLabels?.length} clusters</span>
+            {scope?.ls_version && <span>
+              <span>{scope?.description}</span>
+              <br />
+              <span>{embedding?.model_id}</span>
+              <span>{clusterLabels?.length} clusters</span>
+            </span>}
+            {!scope?.ls_version && <div className="scope-version-warning">
+            <span className="warning-header">Outdated Scope!</span>
+            <span> please "Overwrite" the scope in the last step on the <Link to={`/datasets/${dataset?.id}/setup/${scope?.id}`}>Configure Page</Link> to update.</span>
+          </div>}
           </div>
           <div className="dataset-card">
-            <span><b>{datasetId}</b>  {dataset?.length} rows</span>
+            <span><b>{datasetId}</b>  {scope?.rows}/{dataset?.length} rows</span>
           </div>
+          
         </div>
         <div className="umap-container">
           {/* <div className="umap-container"> */}
           <div className="scatters" style={{ width: scopeWidth, height: scopeHeight }}>
             {points.length ? <>
-              { !isIOS() ? <Scatter
+              { !isIOS() && scope ? <Scatter
                 points={drawPoints}
                 duration={2000}
                 width={scopeWidth}
@@ -444,8 +620,8 @@ function Explore() {
               width={scopeWidth}
               height={scopeHeight}
             /> }
-              {hoveredCluster && hoveredCluster.hull && !scope.ignore_hulls ? <HullPlot
-                hulls={processHulls([hoveredCluster], points)}
+              {hoveredCluster && hoveredCluster.hull && !scope.ignore_hulls && scope.cluster_labels_lookup ? <HullPlot
+                hulls={processHulls([hoveredCluster], points, inputToScopeIndexMap)}
                 fill="lightgray"
                 duration={0}
                 xDomain={xDomain}
@@ -453,8 +629,8 @@ function Explore() {
                 width={scopeWidth}
                 height={scopeHeight} /> : null}
 
-              {slide && slide.hull && !scope.ignore_hulls ? <HullPlot
-                hulls={processHulls([slide], points)}
+              {slide && slide.hull && !scope.ignore_hulls && scope.cluster_labels_lookup ? <HullPlot
+                hulls={processHulls([slide], points, inputToScopeIndexMap)}
                 fill="darkgray"
                 strokeWidth={2}
                 duration={0}
@@ -474,29 +650,10 @@ function Explore() {
                 width={scopeWidth}
                 height={scopeHeight} /> : null}
               <AnnotationPlot
-                points={searchAnnotations}
+                points={intersectedAnnotations}
                 stroke="black"
                 fill="steelblue"
                 size="8"
-                xDomain={xDomain}
-                yDomain={yDomain}
-                width={scopeWidth}
-                height={scopeHeight}
-              />
-              <AnnotationPlot
-                points={slideAnnotations}
-                fill="darkred"
-                size="8"
-                xDomain={xDomain}
-                yDomain={yDomain}
-                width={scopeWidth}
-                height={scopeHeight}
-              />
-
-              <AnnotationPlot
-                points={tagAnnotations}
-                symbol={tag}
-                size="20"
                 xDomain={xDomain}
                 yDomain={yDomain}
                 width={scopeWidth}
@@ -518,7 +675,7 @@ function Explore() {
             {/* </div> */}
           </div>
           {!isMobileDevice() ? <div className="hovered-point">
-            {hoveredCluster ? <span><span className="key">Cluster {hoveredCluster.index}:</span><span className="value">{hoveredCluster.label}</span></span> : null}
+            {hoveredCluster ? <span><span className="key">Cluster {hoveredCluster.cluster}:</span><span className="value">{hoveredCluster.label}</span></span> : null}
             {hovered && Object.keys(hovered).map((key,idx) => {
               let d = hovered[key]
               if(typeof d === 'object' && !Array.isArray(d)) {
@@ -546,32 +703,264 @@ function Explore() {
       </div>
 
       <div className="data">
-        {/* <div className="tab-tables"> */}
+          <div className="filters-container" ref={filtersContainerRef}>
+            <div className={`filter-row search-box ${searchIndices.length ? 'active': ''}`}>
+              <div className="filter-cell left">
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  searchQuery(e.target.elements.searchBox.value);
+                }}>
+                  <input type="text" id="searchBox" placeholder="Nearest Neighbor Search..." />
+                  {/* <button type="submit">Similarity Search</button> */}
+                  <button type="submit">🔍</button>
+                </form>
+              </div>
+              <div className="filter-cell middle">
+                <span>
+                  {searchIndices.length ? <span>{searchIndices.length} rows</span> : null}
+                  {searchIndices.length > 0 ?
+                    <button className="deselect" onClick={() => {
+                      setSearchIndices([])
+                      document.getElementById("searchBox").value = "";
+                    }
+                    }>X</button>
+                    : null}
+                </span>
+              </div>
+              <div className="filter-cell right">
+                <label htmlFor="embeddingModel"></label>
+                <select id="embeddingModel"
+                  onChange={(e) => handleModelSelect(e.target.value)}
+                  value={searchModel}>
+                  {embeddings.filter(d => d.model_id).map((emb, index) => (
+                    <option key={index} value={emb.id}>{emb.id} - {emb.model_id} - {emb.dimensions}</option>
+                  ))}
+                </select>
+                {/* TODO: tooltip */}
+              </div>
+            </div>
 
-        <div className="tab-header">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={tab.id === activeTab ? 'tab-active' : 'tab-inactive'}>
-              {tab.name}
-            </button>
-          ))}
-        </div>
+            <div className={`clusters-select filter-row  ${slideAnnotations.length ? 'active': ''}`}>
+              <div className="filter-cell left">
+                <select onChange={(e) => {
+                  if(e.target.value == -1) {
+                    setSlide(null)
+                    return
+                  }
+                  const cl = clusterLabels.find(cluster => cluster.cluster === +e.target.value)
+                  if(cl) setSlide(cl)
+                }} value={slide?.cluster >= 0 ? slide.cluster : -1}>
+                  <option value="-1">Filter by cluster</option>
+                  {clusterLabels?.map((cluster, index) => (
+                    <option key={index} value={cluster.cluster}>{cluster.cluster}: {cluster.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="filter-cell middle">
+                {slideAnnotations.length ? <span> {slideAnnotations.length} rows
+                  <button className="deselect" onClick={() => {
+                    setSlide(null)
+                  }
+                  }>X</button>
+                </span> : null}
+              </div>
+              <div className="filter-cell right">
+                {slide ?
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    handleLabelUpdate(slide.cluster, clusterLabel);
+                  }}>
+                    <input
+                      className="update-cluster-label"
+                      type="text"
+                      id="update-label"
+                      value={clusterLabel}
+                      onChange={(e) => setClusterLabel(e.target.value)} />
+                    <button type="submit">✍️</button>
+                    {/* TODO: tooltip */}
+                  </form>
+                  : <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target);
+                    const newLabel = formData.get("new-label")
+                    console.log("new label", newLabel)
+                    handleNewCluster(newLabel)
+                  }}>
+                    <input type="text" 
+                        id="new-label" name="new-label" className="new-cluster-label" 
+                        value={newClusterLabel} onChange={(e) => setNewClusterLabel(e.target.value)} 
+                        placeholder="New Cluster"
+                        />
+                    <button type="submit">➕️ Cluster</button>
+                  </form>}
+              </div>
+            </div>
 
-        {activeTab === 0 ?
-          <div className="tab-content">
-            <span>Selected: {selectedIndices?.length}
-              {selectedIndices?.length > 0 ?
-                <button className="deselect" onClick={() => {
-                  setSelectedIndices([])
-                  scatter?.select([])
-                  scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
-                }
-                }>X</button>
-                : null}
-            </span>
-            {selectedIndices?.length > 0 ?
+            <div className={`filter-row tags-box ${filterInputIndices(tagset[tag] || [])?.length ? 'active': ''}`}>
+              <div className="filter-cell left tags-select">
+                {/* <select onChange={(e) => {
+                  if(e.target.value == "-1") {
+                    setTag(null)
+                    return
+                  }
+                  setTag(e.target.value)
+                }} value={tag ? tag : "-1"}>
+                  <option value="-1">Select a tag</option>
+                  {tags.map((t, index) => (
+                    <option key={index} value={t}>{t} ({filterInputIndices(tagset[t] || []).length})</option>
+                  ))}
+                </select> */}
+              {tags.map((t, index) => (
+                <button
+                  key={index}
+                  className={`tag-button ${tag === t ? 'selected' : ''}`}
+                  onClick={() => setTag(tag === t ? null : t)}
+                >
+                  {t} ({filterInputIndices(tagset[t] || []).length})
+                </button>
+              ))}
+              </div>
+              <div className="filter-cell middle">
+                {tag && filterInputIndices(tagset[tag] || []).length ? <span>{filterInputIndices(tagset[tag] || []).length} rows
+                  <button className="deselect" onClick={() => {
+                    setTag(null)
+                  }
+                  }>X</button>
+                </span> : null}
+              </div>
+              <div className="filter-cell right new-tag">
+                {!tag ? <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const newTag = e.target.elements.newTag.value;
+                  fetch(`${apiUrl}/tags/new?dataset=${datasetId}&tag=${newTag}`)
+                    .then(response => response.json())
+                    .then(data => {
+                      console.log("new tag", data)
+                      e.target.elements.newTag.value = ""
+                      fetchTagSet()
+                    });
+                }}>
+                  <input type="text" id="newTag" placeholder="New Tag" />
+                  <button type="submit">➕ Tag</button>
+                </form> : <form onSubmit={(e) => {
+                  e.preventDefault();
+                  fetch(`${apiUrl}/tags/delete?dataset=${datasetId}&tag=${tag}`)
+                    .then(response => response.json())
+                    .then(data => {
+                      console.log("deleted tag", data)
+                      setTag(null)
+                      fetchTagSet()
+                    })
+                  }}>
+                  <button type="submit">➖ {tag}</button>
+                </form>}
+              </div>
+            </div>
+
+            {columnFilters?.length ? <div className={`filter-row column-filter ${columnIndices?.length ? 'active': ''}`}>
+              <div className="filter-cell left">
+                {columnFilters.map(column => (
+                  <span key={column.column}>{column.column}: 
+                    <select onChange={(e) => {
+                      let active = {...columnFiltersActive}
+                      active[column.column] = e.target.value
+                      setColumnFiltersActive(active)
+                    }} value={columnFiltersActive[column.column] || ""}>
+                      <option value="">Select a value</option>
+                      {column.categories.map(c => (
+                        <option key={c} value={c}>{c} ({column.counts[c]})</option>
+                      ))}
+                    </select>
+                  </span>
+                ))}
+              </div>
+              <div className="filter-cell middle">
+                {columnIndices?.length ? <span>{columnIndices?.length} rows</span> : null}
+                {columnIndices?.length ? <button className="deselect" onClick={() => {
+                    setColumnFiltersActive({})
+                    setColumnIndices([])
+                  }}>X</button> : null}
+              </div>
+              <div className="filter-cell right">
+              </div>
+            </div> : null}
+
+            <div className={`filter-row ${selectedIndices?.length ? 'active': ''}`}>
+              <div className="filter-cell left">
+                Shift+Drag on the map to filter by points.
+              </div>
+              <div className="filter-cell middle">
+                  {selectedIndices?.length > 0 ?<span>{selectedIndices?.length} rows</span> : null}
+                  {selectedIndices?.length > 0 ?<button className="deselect" onClick={() => {
+                      setSelectedIndices([])
+                      scatter?.select([])
+                      // scatter?.zoomToOrigin({ transition: true, transitionDuration: 1500 })
+                    }
+                    }>X</button>
+                    : null}
+              </div>
+              <div className="filter-cell right"></div>
+            </div>
+
+            <div className="filter-row">
+              <div className="filter-cell left">
+                {intersectedIndices.length > 0 ? "Intersection of filtered rows:" : "No rows filtered"}
+              </div>
+              <div className="filter-cell middle intersected-count">
+                <span>{intersectedIndices.length} rows</span>
+              </div>
+              <div className="filter-cell right bulk-actions">
+                <div className="bulk-actions-buttons">
+                  Bulk Actions: 
+                  <button className={`bulk ${bulkAction == "tag" ? 'active' : ''}`} onClick={() => bulkAction == "tag" ? setBulkAction(null) : setBulkAction("tag")}>🏷️</button>
+                  <button className={`bulk ${bulkAction == "cluster" ? 'active' : ''}`} onClick={() => bulkAction == "cluster" ? setBulkAction(null) : setBulkAction("cluster")}>️📍</button>
+                  {/* <button className={`bulk ${bulkAction == "save" ? 'active' : ''}`} onClick={() => bulkAction == "save" ? setBulkAction(null) : setBulkAction("save")}>💾</button> */}
+                  <button className={`bulk ${bulkAction == "delete" ? 'active' : ''}`} onClick={() => bulkAction == "delete" ? setBulkAction(null) : setBulkAction("delete")}>🗑️</button>
+                </div>
+                <div className="bulk-actions-action">
+                  {bulkAction == "tag" ? <Tagging dataset={dataset} indices={intersectedIndices} 
+                    onSuccess={() => {
+                      setBulkAction(null)
+                      fetchTagSet()
+                    }} /> : null}
+                  {bulkAction == "cluster" ? <Clustering dataset={dataset} scope={scope} indices={intersectedIndices} 
+                    onSuccess={() => {
+                      setBulkAction(null)
+                      fetchScopeMeta()
+                      fetchScopeRows()
+                    }} /> : null}
+                  {/* {bulkAction == "save" ? <Saving dataset={dataset} scope={scope} indices={intersectedIndices} 
+                    onSuccess={() => setBulkAction(null)} /> : null} */}
+                  {bulkAction == "delete" ? <Deleting dataset={dataset} scope={scope} indices={intersectedIndices} 
+                    onSuccess={() => {
+                      setBulkAction(null)
+                      clearFilters()
+                      fetchScopeMeta()
+                      fetchScopeRows()
+                    }} /> : null}
+                </div>
+              </div>
+            </div>
+          </div>
+
+            <FilterDataTable
+                dataset={dataset}
+                scope={scope}
+                indices={intersectedIndices}
+                clusterMap={clusterMap}
+                clusterLabels={clusterLabels}
+                tagset={tagset}
+                onTagset={fetchTagSet}
+                onScope={() => { 
+                  fetchScopeMeta() 
+                  fetchScopeRows()
+                }}
+                onHover={(index) => handleHover(inputToScopeIndexMap[index])}
+                onClick={handleClicked}
+                height={`calc(100% - ${filtersHeight + 62}px)`}
+            />
+
+{/* {selectedIndices?.length > 0 ?
               <IndexDataTable
                 indices={selectedIndices}
                 clusterIndices={clusterIndices}
@@ -583,168 +972,8 @@ function Explore() {
                 onHover={handleHover}
                 onClick={handleClicked}
               />
-              : null}
-            
-            {/* <FilterDataTable
-                dataset={dataset}
-                indices={selectedIndices}
-                clusterIndices={clusterIndices}
-                clusterLabels={clusterLabels}
-            /> */}
-
-          </div>
-          : null}
-
-        {activeTab === 1 ?
-          <div className="tab-content">
-            <div className="search-box">
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                searchQuery(e.target.elements.searchBox.value);
-                setActiveTab(1)
-              }}>
-                <input type="text" id="searchBox" />
-                <button type="submit">Similarity Search</button>
-                <br />
-                <label htmlFor="embeddingModel"></label>
-                <select id="embeddingModel"
-                  onChange={(e) => handleModelSelect(e.target.value)}
-                  value={searchModel}>
-                  {embeddings.filter(d => d.model_id).map((emb, index) => (
-                    <option key={index} value={emb.id}>{emb.id} - {emb.model_id} - {emb.dimensions}</option>
-                  ))}
-                </select>
-
-              </form>
-            </div>
-            <span>
-              {searchIndices.length ? <span>Nearest Neighbors: {searchIndices.length} (capped at 150) </span> : null}
-              {searchIndices.length > 0 ?
-                <button className="deselect" onClick={() => {
-                  setSearchIndices([])
-                  document.getElementById("searchBox").value = "";
-                }
-                }>X</button>
-                : null}
-            </span>
-            {searchIndices.length > 0 ?
-              <IndexDataTable
-                indices={searchIndices}
-                distances={distances}
-                clusterIndices={clusterIndices}
-                clusterLabels={clusterLabels}
-                tagset={tagset}
-                dataset={dataset}
-                onTagset={(data) => setTagset(data)}
-                onHover={handleHover}
-                onClick={handleClicked}
-              />
-              : null}
-          </div>
-          : null}
-
-        {activeTab === 2 ?
-          <div className="tab-content">
-            <div className="clusters-select">
-              <select onChange={(e) => {
-                const cl = clusterLabels.find(cluster => cluster.index === +e.target.value)
-                if (cl)
-                  setSlide(cl)
-              }} value={slide?.index}>
-                <option value="">Select a cluster</option>
-                {clusterLabels.map((cluster, index) => (
-                  <option key={index} value={cluster.index}>{cluster.index}: {cluster.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="cluster-selected">
-              {slide ?
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  handleLabelUpdate(slide.index, clusterLabel);
-                }}>
-                  <input
-                    type="text"
-                    id="new-label"
-                    value={clusterLabel}
-                    onChange={(e) => setClusterLabel(e.target.value)} />
-                  <button type="submit">Update Label</button>
-                </form>
-                : null}
-              <span>{slide?.indices.length} {slide?.indices.length ? "Rows" : ""}
-                {slide ? <button className="deselect" onClick={() => {
-                  setSlide(null)
-                }
-                }>X</button>
-                  : null}
-              </span>
-            </div>
-            <div className="cluster-table">
-              {slide?.indices ?
-                <IndexDataTable
-                  indices={slide?.indices}
-                  clusterIndices={clusterIndices}
-                  clusterLabels={clusterLabels}
-                  dataset={dataset}
-                  tagset={tagset}
-                  onTagset={(data) => setTagset(data)}
-                  onHover={handleHover}
-                  onClick={handleClicked}
-                />
-                : null}
-            </div>
-          </div>
-          : null}
-
-        {activeTab === 3 ?
-          <div className="tab-content">
-            <div className="tags-box">
-              <div className="tags-select">
-                Tags: {tags.map(t => {
-                  return <button className="dataset--tag-link" key={t} onClick={() => {
-                    setTag(t)
-                    setActiveTab(3)
-                    scatter?.zoomToPoints(tagset[t], { transition: true, padding: 0.2, transitionDuration: 1500 })
-                  }}>{t}({tagset[t].length})</button>
-                })}
-              </div>
-              {readonly ? null : <div className="new-tag">
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const newTag = e.target.elements.newTag.value;
-                  fetch(`${apiUrl}/tags/new?dataset=${datasetId}&tag=${newTag}`)
-                    .then(response => response.json())
-                    .then(data => {
-                      console.log("new tag", data)
-                      setTagset(data);
-                    });
-                }}>
-                  <input type="text" id="newTag" />
-                  <button type="submit">New Tag</button>
-                </form>
-              </div>}
-            </div>
-            <span>{tag} {tagset[tag]?.length}
-              {tag ? <button className="deselect" onClick={() => {
-                setTag(null)
-              }
-              }>X</button>
-                : null}
-            </span>
-            {tagset[tag] ?
-              <IndexDataTable
-                indices={tagset[tag]}
-                clusterIndices={clusterIndices}
-                clusterLabels={clusterLabels}
-                tagset={tagset}
-                dataset={dataset}
-                onTagset={(data) => setTagset(data)}
-                onHover={handleHover}
-                onClick={handleClicked}
-              />
-              : null}
-          </div>
-          : null}
+              : null} */}
+        
         {/* </div> */}
       </div>
     </div>

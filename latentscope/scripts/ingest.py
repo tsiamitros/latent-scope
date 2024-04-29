@@ -4,16 +4,18 @@ import json
 import argparse
 
 from latentscope.util import get_data_dir
+from latentscope import __version__
 
 # TODO make a parquet version of these
 def main():
     parser = argparse.ArgumentParser(description='Ingest a dataset')
     parser.add_argument('id', type=str, help='Dataset id (directory name in data folder)')
     parser.add_argument('--path', type=str, help='Path to csv or parquet file, otherwise assumes input.csv in dataset directory')
+    parser.add_argument('--text_column', type=str, help='Column to use as text for the scope')
     args = parser.parse_args()
-    ingest_file(args.id, args.path)
+    ingest_file(args.id, args.path, args.text_column)
 
-def ingest_file(dataset_id, file_path):
+def ingest_file(dataset_id, file_path, text_column = None):
     import pandas as pd
     DATA_DIR = get_data_dir()
     directory = os.path.join(DATA_DIR, dataset_id)
@@ -44,7 +46,7 @@ def ingest_file(dataset_id, file_path):
     else:
         raise ValueError(f"Unsupported file type: {file_type}")
 
-    ingest(dataset_id, df)
+    ingest(dataset_id, df, text_column)
 
 
 def ingest(dataset_id, df, text_column = None):
@@ -111,6 +113,7 @@ def ingest(dataset_id, df, text_column = None):
         if column_type == "string" and unique_values_count <= 20:
             categories = df[column].value_counts().index.tolist()
             column_metadata[column]["categories"] = categories
+            column_metadata[column]["counts"] = df[column].value_counts().to_dict()
         if column_type == "string":
             if df[column].str.startswith("http").all():
                 column_metadata[column]["url"] = True
@@ -139,15 +142,24 @@ def ingest(dataset_id, df, text_column = None):
             "columns": df.columns.tolist(),
             "text_column": text_column,
             "column_metadata": column_metadata,
-            "potential_embeddings": potential_embeddings
+            "potential_embeddings": potential_embeddings,
+            "ls_version": __version__
             }, f, indent=2)
 
     # create all the directories we will use
-    os.makedirs(os.path.join(DATA_DIR, dataset_id, "tags"), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, dataset_id, "embeddings"), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, dataset_id, "umaps"), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, dataset_id, "clusters"), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, dataset_id, "scopes"), exist_ok=True)
+    tags_dir = os.path.join(DATA_DIR, dataset_id, "tags")
+    os.makedirs(tags_dir, exist_ok=True)
+    # Create default tags if they don't exist
+    new_files = ['👍.indices', '👎.indices']
+    for file_name in new_files:
+        file_path = os.path.join(tags_dir, file_name)
+        if not os.path.exists(file_path):
+            with open(file_path, 'w') as file:
+                file.write('')  # Initialize with an empty JSON object
 
 
 if __name__ == "__main__":

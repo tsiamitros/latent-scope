@@ -1,6 +1,6 @@
 .container {
   display: grid;
-  grid-template-columns: 548px 1fr;
+  grid-template-columns: 528px 1fr;
   /* Left: 500px, Middle: 2/3 of remaining, Right: rest */
   gap: 6px;
   /* This adds space between your columns */
@@ -13,6 +13,7 @@
   flex-direction: column;
   overflow-y: hidden;
   height: 100%;
+  /* max-width: 535px; */
 }
 
 .data {
@@ -23,7 +24,10 @@
 }
 
 .umap-container {
-  margin: 6px 12px;
+  /* margin: 6px 12px; */
+  /* max-width: 515px; */
+  margin-top: 6px;
+  margin-left: 12px;
   height: 100%;
   overflow-y: hidden;
   min-height: 0;
@@ -45,8 +49,10 @@
   flex-direction: column;
   justify-content: center;
 
-  margin: 6px 12px;
-  padding: 16px;
+  /* margin: 6px 12px; */
+  margin-top: 6px;
+  margin-left: 12px;
+  padding: 6px;
   height: 148px;
   border: 1px solid lightgray;
   border-radius: 5px;
@@ -84,6 +90,14 @@
   flex-direction: row;
   gap: 12px;
 }
+.scope-version-warning {
+  margin: 6px 0;
+
+}
+.scope-version-warning .warning-header {
+  color: red;
+  font-weight: bold;
+}
 
 /* SECOND ROW: UMAP */
 
@@ -99,6 +113,10 @@
   display: flex;
   flex-direction: column;
   padding: 6px;
+  max-width: 500px;
+  margin-top: 6px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
 }
 
 .container .hovered-point .key {
@@ -110,105 +128,128 @@
 }
 
 
-/* MIDDLE COLUMN */
-.container .tab-tables {
-  /* padding: 12px 0; */
-
-}
-
-/* SECOND ROW: Tabs */
-.container .tab-tables {
+/* Filters and data table */
+.filters-container {
   display: flex;
   flex-direction: column;
-}
-
-.container .tab-header {
-  height: 32px;
-  background-color: #f1f1f1;
-  border: 1px solid #ccc;
-  border-bottom: none;
-  /* padding: 10px 20px; */
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.container .tab-header button {
-  height: 32px;
-  display: inline-block;
-  border: none;
-  border-radius: 0;
-  margin: 0;
-  padding: 6px 24px;
-}
-
-.container .tab-header button:hover {
-  background-color: #ddd;
-  border-color: none;
-}
-
-.container .tab-header button:focus,
-.container .tab-header button:focus-visible {
-  outline: none;
-}
-
-.container .tab-header .tab-active {
-  background-color: white;
-  border-top: 2px solid seagreen;
-  border-bottom: none;
-  font-weight: bold;
-}
-
-@media (prefers-color-scheme: dark) {
-  .container .tab-header {
-    background-color: #333;
-  }
-
-  .container .tab-header button:hover {
-    background-color: #333;
-  }
-
-  .container .tab-header .tab-active {
-    background-color: #444;
-  }
-}
-
-.tab-content {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* max-width: 650px; */
-  /* width: 650px; */
-  /* flex-grow: 1; */
-  height: calc(100% - 32px);
-  /* height: 100%; */
-  overflow-y: auto;
+  gap: 4px;
   border: 1px solid lightgray;
   padding: 12px;
+  margin-top: 6px;
+  margin-right: 12px;
+  border-radius: 5px;
 }
 
-/* 
-.container .tab-content table {
-  height: 100%;
+/* lets make consistent input styling */
+.filters-container input[type="text"] {
+  padding: 3px;
+  margin: 0 6px;
+  border-radius: 3px;
+  border-width: 1px;
 }
-.container .tab-content table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+.filters-container select {
+  border-radius: 3px;
 }
-.container .tab-content tbody {
-  display: block;
-  max-height: 100%;
-  overflow-y: scroll;
-} */
-/* .container .tab-content tbody tr {
-} */
+
+.filters-container button {
+  margin-left: 0.3em;
+  margin-top: 1px;
+  border: 1px solid gray;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.filters-container .new-tag input {
+  width: 60px;
+}
+.filters-container .search-box input {
+  /* height: 24px; */
+  width: 300px;
+}
+.filters-container .search-box select {
+  width: 358px;
+}
+
+.filters-container .clusters-select select {
+  width: 310px;
+}
+.filters-container .new-cluster-label {
+  width: 200px;
+}
+.filters-container .update-cluster-label {
+  width: 250px;
+}
+
+.filters-container .filter-row {
+  display: flex;
+  flex-direction: row;
+  /* border: 1px solid gray; */
+  background-color: #f9f9f9;
+  border-radius: 4px;
+}
+.filters-container .filter-row.active {
+  background-color: #e6e6e6;
+}
+.filters-container .column-filter select {
+  max-width: 120px;
+}
+
+@media screen and (max-width: 1515px) {
+  .filters-container .search-box input {
+    /* height: 24px; */
+    width: 150px;
+  }
+  .filters-container .search-box select {
+    width: 158px;
+  }
+
+  .filters-container .clusters-select select {
+    width: 160px;
+  }
+  .filters-container .update-cluster-label {
+    width: 150px;
+  }
+  .filters-container .new-cluster-label {
+    width: 100px;
+  }
+}
 
 
-/* .container .tab-active {
-  color: seagreen;
-  font-weight: bold;
-  background-color: lightgray; 
-} */
+@media (prefers-color-scheme: dark) {
+  .filters-container .filter-row {
+    background-color: #333;
+    color: #fff;
+  }
+  .filters-container .filter-row.active {
+    background-color: #555;
+  }
+}
+
+
+.filters-container .filter-cell {
+  flex-grow: 1;
+  padding: 4px;
+  text-align: left;
+}
+
+.filters-container .filter-cell.left, .filters-container .filter-cell.right {
+  flex: 2; /* Makes left and right cells take twice the space of the middle cell */
+}
+
+.filters-container .filter-cell.middle {
+  flex: 1; /* Middle cell takes the base flex size */
+}
+
+.filters-container .bulk {
+  cursor: pointer;
+}
+.filters-container .bulk.active {
+  border: 1px solid black;
+}
+
+
+
+
 
 
 .tags-box {
@@ -219,7 +260,11 @@
   justify-content: space-evenly;
 }
 
-.new-tag {
+.tag-button.selected {
+  border: 2px solid black;
+}
+
+/* .new-tag {
   margin: 6px 0;
 }
 
@@ -228,28 +273,15 @@
   width: 160px;
   border: 1px solid lightgray;
   padding: 7px;
-}
+} */
 
-.new-tag input {
-  width: 60px;
-}
 
-/* Styling for nearest neighbors section */
-.search-box input {
-  /* height: 24px; */
-  width: 350px;
-}
 
-.search-box select {
-  width: 358px;
-
-}
-
-.tab-neighbors .deselect {
+/* .tab-neighbors .deselect {
   display: inline-block;
   margin: 5px;
   width: 32px;
-}
+} */
 
 
 /* RIGHT COLUMN */
@@ -272,13 +304,13 @@
     margin-top: 5px;
   }
 
-  .data {
-    width: 100%
+  .left-column {
+    flex-grow: 1
   }
-
-  .data,
-  .cluster {
-    height: auto;
+  .data{
+    height: 50%;
+    width: 100%;
+    flex-grow: 1;
     overflow-y: visible;
   }
   .hovered-point {
@@ -302,7 +334,7 @@
     height: auto;
   }
 
-  .tab-content {
+  .filters-container {
     height: auto;
     margin-top: 40px;
   }

@@ -27,6 +27,15 @@ function Cluster({ dataset, cluster, umap, onNew, onChange}) {
   const { startJob: deleteClusterJob } = useStartJobPolling(dataset, setClusterJob, `${apiUrl}/jobs/delete/cluster`);
 
   const [clusters, setClusters] = useState([]);
+  const [localCluster, setLocalCluster] = useState(cluster)
+  useEffect(() => {
+    if(cluster) {
+      setLocalCluster(cluster)
+    } else {
+      setLocalCluster(clusters[0])
+    }
+  }, [cluster, clusters])
+
 
   function fetchClusters(datasetId, callback) {
     fetch(`${apiUrl}/datasets/${datasetId}/clusters`)
@@ -53,14 +62,15 @@ function Cluster({ dataset, cluster, umap, onNew, onChange}) {
   useEffect(() => {
     if(clusterJob?.status == "completed") {
       fetchClusters(dataset.id, (clstrs) => {
-        setClusters(clstrs)
         let cls;
         if(clusterJob.job_name == "cluster"){
           cls = clstrs.find(d => d.id == clusterJob.run_id)
         } else if(clusterJob.job_name == "rm") {
           cls = clstrs[0]
         }
-        onNew(clstrs, cls)
+        setLocalCluster(cls)
+        setClusters(clstrs)
+        onNew(clstrs)
       })
     }
   }, [clusterJob, dataset, setClusters, onNew]);
@@ -115,9 +125,9 @@ function Cluster({ dataset, cluster, umap, onNew, onChange}) {
             <input type="radio" 
               id={`cluster${index}`} 
               name="cluster" 
-              value={cluster} 
-              checked={cl.id === cluster?.id} 
-              onChange={() => onChange(cl)} />
+              value={cluster || ""} 
+              checked={cl.id === localCluster?.id} 
+              onChange={() => setLocalCluster(cl)} />
             <label htmlFor={`cluster${index}`}>{cl.id}
             <br></br>
               Clusters: {cl.n_clusters}<br/>
@@ -131,6 +141,8 @@ function Cluster({ dataset, cluster, umap, onNew, onChange}) {
           </div>
         ))}
       </div>
+      <br></br>
+        {localCluster && <button type="submit" onClick={() => onChange(localCluster)}>Use Cluster</button>} {localCluster?.id}
     </div>
   );
 }
